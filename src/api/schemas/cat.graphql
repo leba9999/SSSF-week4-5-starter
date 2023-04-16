@@ -39,6 +39,7 @@ type Mutation {
     birthdate: DateTime!
     location: LocationInput!
     filename: String!
+    owner: ID
   ): Cat
   updateCat(id: ID!, cat_name: String, weight: Float, birthdate: DateTime): Cat
   deleteCat(id: ID!): Cat

@@ -5,19 +5,20 @@ import helmet from 'helmet';
 import cors from 'cors';
 import {ApolloServer} from '@apollo/server';
 import {expressMiddleware} from '@apollo/server/express4';
-import typeDefs from './api/schemas/index';
-import resolvers from './api/resolvers/index';
+import typeDefs from './api/schemas';
+import resolvers from './api/resolvers';
 import {
-  ApolloServerPluginLandingPageLocalDefault,
   ApolloServerPluginLandingPageProductionDefault,
+  ApolloServerPluginLandingPageLocalDefault,
 } from '@apollo/server/plugin/landingPage/default';
 import {notFound, errorHandler} from './middlewares';
 import authenticate from './functions/authenticate';
 import {MyContext} from './interfaces/MyContext';
 import {createRateLimitRule} from 'graphql-rate-limit';
 import {shield} from 'graphql-shield';
-import {makeExecutableSchema} from '@graphql-tools/schema';
 import {applyMiddleware} from 'graphql-middleware';
+import {makeExecutableSchema} from '@graphql-tools/schema';
+import userModel from './api/models/userModel';
 
 const app = express();
 
@@ -38,10 +39,33 @@ app.use(express.json());
 
     // TODO Apply the permissions object to the schema
     // remember to change the typeDefs and resolvers to a schema object
+    const rateLimitRule = createRateLimitRule({
+      identifyContext: (ctx) => ctx.id,
+    });
 
+    const permissions = shield({
+      Mutation: {
+        login: rateLimitRule({window: '1s', max: 10}),
+      },
+    });
+
+    const schema = applyMiddleware(
+      makeExecutableSchema({
+        typeDefs,
+        resolvers,
+      }),
+      permissions
+    );
+
+    app.use(
+      helmet({
+        crossOriginEmbedderPolicy: false,
+        contentSecurityPolicy: false,
+      })
+    );
+    const test = new userModel();
     const server = new ApolloServer<MyContext>({
-      typeDefs,
-      resolvers,
+      schema,
       introspection: true,
       plugins: [
         process.env.NODE_ENV === 'production'
@@ -50,12 +74,14 @@ app.use(express.json());
             })
           : ApolloServerPluginLandingPageLocalDefault(),
       ],
-      includeStacktraceInErrorResponses: false,
+      includeStacktraceInErrorResponses: true,
     });
     await server.start();
 
     app.use(
       '/graphql',
+      express.json(),
+      cors<cors.CorsRequest>(),
       expressMiddleware(server, {
         context: async ({req}) => authenticate(req),
       })
